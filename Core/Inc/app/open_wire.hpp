@@ -72,6 +72,50 @@
 
 namespace ams::open_wire {
 
+// State of the open-wire detection FSM
+enum class Status : std::uint8_t {
+    Clear   = 0,  // Normal operation: no open wire detected
+    Suspect = 1,  // Open wire detected on 1st pass; awaiting fast re-check confirmation
+    Fault   = 2   // Confirmed open wire across N consecutive passes; triggers SDC shutdown
+};
+
+inline constexpr Status OW_CLEAR   = Status::Clear;
+inline constexpr Status OW_SUSPECT = Status::Suspect;
+inline constexpr Status OW_FAULT   = Status::Fault;
+
+// Pure debounce state tracker for open-wire detection
+struct DebounceTracker {
+    Status        status{Status::Clear};
+    std::uint8_t  consecutive_fails{0u};
+    std::uint8_t  suspect_mask{0u};
+    std::uint8_t  confirmed_mask{0u};
+
+    void update(std::uint8_t raw_mask, std::uint8_t confirm_samples) noexcept {
+        if (raw_mask != 0u) {
+            if (consecutive_fails < 0xFFu) {
+                ++consecutive_fails;
+            }
+            suspect_mask = raw_mask;
+            if (consecutive_fails >= confirm_samples) {
+                status = Status::Fault;
+                confirmed_mask = raw_mask;
+            } else {
+                status = Status::Suspect;
+                confirmed_mask = 0u;
+            }
+        } else {
+            reset();
+        }
+    }
+
+    void reset() noexcept {
+        status = Status::Clear;
+        consecutive_fails = 0u;
+        suspect_mask = 0u;
+        confirmed_mask = 0u;
+    }
+};
+
 // Max cells per LTC6811 IC (datasheet). Sizes the returned conductor mask
 // (0..12 conductors -> fits a uint16_t).
 inline constexpr std::uint8_t MaxCellsPerIc = 12u;

@@ -8,6 +8,7 @@ extern "C" {
 
 // test_bms_service.cpp
 void test_cell_open_range_budget_under_500ms(void);
+void test_open_wire_detection_budget_under_500ms(void);
 void test_module_loss_budget_under_500ms(void);
 void test_bms_open_wire_flags_module(void);
 void test_bms_open_wire_pec_glitch_signals_retry(void);
@@ -267,6 +268,9 @@ void test_open_wire_bench_healthy_no_false_positive(void);
 void test_open_wire_bench_open_conductor_detected(void);
 void test_open_wire_conductor_to_cell_mapping(void);
 void test_open_wire_input_guards(void);
+void test_open_wire_spurious_single_sample_does_not_trip_safety(void);
+void test_open_wire_n_consecutive_samples_trips_safety(void);
+void test_open_wire_fault_ok_fault_sequence_resets_streak(void);
 void test_predicates_disconnect_is_immediate_not_range_debounced(void);
 void test_predicates_boot_grace_suppresses_data_predicates(void);
 void test_predicates_boot_grace_does_not_suppress_force_error(void);
@@ -611,6 +615,7 @@ int main(void) {
     UNITY_BEGIN();
 
         RUN_TEST(test_cell_open_range_budget_under_500ms);
+    RUN_TEST(test_open_wire_detection_budget_under_500ms);
     RUN_TEST(test_module_loss_budget_under_500ms);
     RUN_TEST(test_bms_open_wire_flags_module);
     RUN_TEST(test_bms_open_wire_pec_glitch_signals_retry);
@@ -857,6 +862,9 @@ RUN_TEST(test_bms_ltc_clean_response_decodes_all_cells);
     RUN_TEST(test_open_wire_bench_open_conductor_detected);
     RUN_TEST(test_open_wire_conductor_to_cell_mapping);
     RUN_TEST(test_open_wire_input_guards);
+    RUN_TEST(test_open_wire_spurious_single_sample_does_not_trip_safety);
+    RUN_TEST(test_open_wire_n_consecutive_samples_trips_safety);
+    RUN_TEST(test_open_wire_fault_ok_fault_sequence_resets_streak);
     RUN_TEST(test_predicates_disconnect_is_immediate_not_range_debounced);
     RUN_TEST(test_predicates_boot_grace_suppresses_data_predicates);
     RUN_TEST(test_predicates_boot_grace_does_not_suppress_force_error);

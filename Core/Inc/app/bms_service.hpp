@@ -11,6 +11,7 @@
 
 #include "ams_config.hpp"
 #include "can_frame.hpp"
+#include "open_wire.hpp"
 
 #include <atomic>
 #include <cstddef>
@@ -58,8 +59,19 @@ struct BmsState {
     // Distinct from tap_fault_mask, which MASKS a high-R tap so it cannot
     // false-trip OV/UV: an ADOW-confirmed open is a real fault and latches
     // FaultReason::CellOpenWire in any state. Only written when
-    // config::CellOpenWireCheck is enabled; 0 otherwise.
+    // config::CellOpenWireCheck is enabled AND confirmed across
+    // config::OpenWireConfirmSamples consecutive ADOW passes; 0 otherwise.
     std::uint8_t  cell_open_mask;
+
+    // Open-wire debounce and fast re-check tracking:
+    // When an open wire is detected on the regular poll, status becomes Suspect,
+    // cell_open_suspect_mask holds the raw offending module mask, and a fast re-check
+    // is scheduled immediately. Only upon reaching config::OpenWireConfirmSamples
+    // consecutive cycles does status become Fault and cell_open_mask assert.
+    open_wire::Status open_wire_status;
+    std::uint8_t      open_wire_consecutive_fails;
+    std::uint8_t      cell_open_suspect_mask;
+    std::uint32_t     cell_open_suspect_cells[config::BmsModuleCount];
 
     // Which INDIVIDUAL cells straddle a confirmed open tap: bit c of
     // cell_open_cells[m] set <=> cell c of module m borders a conductor that
@@ -266,6 +278,19 @@ public:
         }
     }
 
+    // Resets open-wire detection state and counters (for tests and error clearing).
+    void reset_open_wire_state() noexcept;
+
+    [[nodiscard]] open_wire::Status open_wire_status() const noexcept {
+        return snapshot().open_wire_status;
+    }
+    [[nodiscard]] std::uint8_t open_wire_consecutive_fails() const noexcept {
+        return snapshot().open_wire_consecutive_fails;
+    }
+    [[nodiscard]] std::uint8_t cell_open_suspect_mask() const noexcept {
+        return snapshot().cell_open_suspect_mask;
+    }
+
 private:
     BmsService();
 
@@ -300,6 +325,12 @@ private:
     // set in state_.temp_disconnect_mask. Single-writer (BmsPollTask).
     bool          seen_valid_[config::BmsModuleCount][config::TempsPerModule] = {};
     std::uint8_t  open_run_ [config::BmsModuleCount][config::TempsPerModule] = {};
+
+    // Open-wire debounce tracking (writer only: BmsPollTask)
+    std::uint8_t  open_wire_consecutive_fails_{0u};
+    std::uint8_t  in_poll_raw_mask_{0u};
+    std::uint32_t in_poll_raw_cells_[config::BmsModuleCount] = {};
+    bool          poll_counted_fail_{false};
 };
 
 // Per-IC PEC error counter, exported for telemetry diagnostics.

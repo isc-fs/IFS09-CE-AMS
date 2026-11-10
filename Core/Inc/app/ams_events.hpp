@@ -47,9 +47,10 @@ inline constexpr std::uint32_t AllRelayActions =
 
 namespace ams::events::bms {
 
-inline constexpr std::uint32_t PollVDue = 1u << 0;
-inline constexpr std::uint32_t PollTDue = 1u << 1;
+inline constexpr std::uint32_t PollVDue        = 1u << 0;
+inline constexpr std::uint32_t PollTDue        = 1u << 1;
+inline constexpr std::uint32_t PollAdowFastDue = 1u << 2;
 
-inline constexpr std::uint32_t All = PollVDue | PollTDue;
+inline constexpr std::uint32_t All = PollVDue | PollTDue | PollAdowFastDue;
 
 }  // namespace ams::events::bms

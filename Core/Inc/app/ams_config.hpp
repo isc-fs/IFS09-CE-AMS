@@ -48,6 +48,27 @@ inline constexpr std::uint16_t CellOpenWireDeltaMv = 400;   // datasheet open th
 // when any IC was skipped absorbs the glitch IN THE SAME poll, keeping detection
 // < 500 ms. 1 retry (2 attempts) bounds the added time at ~2 x two ADOW passes.
 inline constexpr std::uint8_t  OpenWireRetries     = 1;
+
+// Debounce & Fast Re-check configuration for Open-Wire Detection:
+// To prevent spurious trips caused by transient harness noise or cell rail switching,
+// a detected open wire is initially classified as OW_SUSPECT. A fast re-check cycle
+// is immediately scheduled (OpenWireFastRecheckMs delay, default 0 ms for immediate back-to-back).
+// A critical fault is only confirmed when the open wire persists across OpenWireConfirmSamples
+// consecutive ADOW cycles.
+//
+// Formula Student Timing Budget (FS rule: AIRs must open <= 500 ms upon fault):
+//   T_trip = T_cadence (200 ms) + T_adow1 (~28 ms) + (N - 1) * (T_adow_fast (~28 ms) + T_recheck_delay)
+//            + T_safety_tick (10 ms) + T_AIR_mechanical (40 ms)
+//   For N = 2: 200 + 28 + 28 + 10 + 40 = 306 ms  (194 ms margin < 500 ms)
+//   For N = 3: 200 + 28 + 56 + 10 + 40 = 334 ms  (166 ms margin < 500 ms)
+inline constexpr std::uint8_t  OpenWireConfirmSamples = 2;
+inline constexpr std::uint32_t OpenWireFastRecheckMs  = 0;   // 0 = immediate back-to-back re-poll
+
+// Optional hardware profiling toggle. When 1, toggles debug GPIO via atomic BSRR writes
+// during ADOW ADC conversion, isoSPI register reads, and MCU evaluation.
+#ifndef ENABLE_ADOW_PROFILING
+#define ENABLE_ADOW_PROFILING 0
+#endif
 // BENCH DIAGNOSTIC: dump the raw ADOW pull-up / pull-down per-cell readings over
 // pit-diag, to debug the ADOW encoding and conversion timing on a real chain
 // (compare PU vs PD on a known open). Runs its own two-pass ADOW scan in

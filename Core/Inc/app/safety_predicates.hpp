@@ -197,9 +197,11 @@ module_above_i16(const std::int16_t (&per_module)[config::BmsModuleCount],
     // Cell OPEN-WIRE (LTC6811 ADOW). A confirmed broken cell-sense wire faults in
     // ANY state -- including the case the software cell-mV plausibility check can
     // miss, where the open still reads in-range. Armed only when the ADOW poll is
-    // enabled (config::CellOpenWireCheck); BmsPollTask leaves cell_open_mask 0
-    // otherwise. Detail byte = the offending-module mask.
-    if (config::CellOpenWireCheck && in.bms.cell_open_mask != 0u) {
+    // enabled (config::CellOpenWireCheck); requires confirmed Fault status (not Suspect).
+    // BmsPollTask leaves cell_open_mask 0 while in Suspect.
+    // Detail byte = the offending-module mask.
+    if (config::CellOpenWireCheck && in.bms.cell_open_mask != 0u &&
+        in.bms.open_wire_status != open_wire::Status::Suspect) {
         return { FaultReason::CellOpenWire, in.bms.cell_open_mask };
     }
 
