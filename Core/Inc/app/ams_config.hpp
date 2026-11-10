@@ -61,7 +61,7 @@ inline constexpr std::uint8_t  OpenWireRetries     = 1;
 //            + T_safety_tick (10 ms) + T_AIR_mechanical (40 ms)
 //   For N = 2, delay = 10 ms: 200 + 28 + (28 + 10) + 10 + 40 = 316 ms  (184 ms margin < 500 ms)
 //   For N = 3, delay = 10 ms: 200 + 28 + 2 * (28 + 10) + 10 + 40 = 354 ms  (146 ms margin < 500 ms)
-inline constexpr std::uint8_t  OpenWireConfirmSamples = 2;
+inline constexpr std::uint8_t  OpenWireConfirmSamples = 3;
 inline constexpr std::uint32_t OpenWireFastRecheckMs  = 10;  // 10 ms pacing between fast re-check passes
 
 // Optional hardware profiling toggle. When 1, toggles debug GPIO via atomic BSRR writes
