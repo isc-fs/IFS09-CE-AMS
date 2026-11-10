@@ -24,6 +24,19 @@
 #define ADOW_PROF_PIN        GPIO_PIN_1
 #endif
 
+namespace ams::bms_profiling {
+inline void init_profiling_gpio() noexcept {
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    GPIO_InitTypeDef g{};
+    g.Pin = ADOW_PROF_PIN;
+    g.Mode = GPIO_MODE_OUTPUT_PP;
+    g.Pull = GPIO_NOPULL;
+    g.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+    HAL_GPIO_Init(ADOW_PROF_PORT, &g);
+    ADOW_PROF_PORT->BSRR = (static_cast<std::uint32_t>(ADOW_PROF_PIN) << 16U);
+}
+}  // namespace ams::bms_profiling
+
 // Set pin high using atomic BSRR write
 #define ADOW_PROF_PIN_HIGH() do { ADOW_PROF_PORT->BSRR = ADOW_PROF_PIN; } while (0)
 // Set pin low using atomic BSRR write (upper 16 bits reset the pin)
@@ -39,6 +52,10 @@
 #define ADOW_PROF_MCU_STOP()        ADOW_PROF_PIN_LOW()
 
 #else
+
+namespace ams::bms_profiling {
+inline void init_profiling_gpio() noexcept {}
+}  // namespace ams::bms_profiling
 
 #define ADOW_PROF_PIN_HIGH()        do {} while (0)
 #define ADOW_PROF_PIN_LOW()         do {} while (0)
