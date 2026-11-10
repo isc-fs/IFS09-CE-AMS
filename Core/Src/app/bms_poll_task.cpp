@@ -908,8 +908,6 @@ void run_temperature_poll() {
 extern "C" void ams_bms_poll_task_run(void *argument) {
     (void)argument;
 
-    ams::bms_profiling::init_profiling_gpio();
-
     s_volt_timer = osTimerNew(&volt_timer_cb, osTimerPeriodic, nullptr, nullptr);
     s_temp_timer = osTimerNew(&temp_timer_cb, osTimerPeriodic, nullptr, nullptr);
 

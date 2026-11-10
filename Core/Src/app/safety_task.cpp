@@ -138,14 +138,6 @@ void SafetyTask::run() noexcept {
     // permanently on (main.c).
     ErrorLatch::init();
 
-#if defined(AMS_HIL_CLEAR_ERROR_LATCH)
-    // HIL bench: ensure any ErrorLatch persisting from a previous bench run
-    // is cleared BEFORE we evaluate boot_in_error. App_InitTask is lower priority
-    // than SafetyTask (osPriorityHigh vs osPriorityRealtime), so SafetyTask
-    // runs first and would otherwise boot into Error on sticky latch.
-    ErrorLatch::clear();
-#endif
-
     // Boot in ERROR if a previous run latched it. The bench build
     // (-DAMS_HIL_CLEAR_ERROR_LATCH) has App_InitTask clear the latch, so
     // there we come up clean unless it was set this session.
