@@ -59,10 +59,10 @@ inline constexpr std::uint8_t  OpenWireRetries     = 1;
 // Formula Student Timing Budget (FS rule: AIRs must open <= 500 ms upon fault):
 //   T_trip = T_cadence (200 ms) + T_adow1 (~28 ms) + (N - 1) * (T_adow_fast (~28 ms) + T_recheck_delay)
 //            + T_safety_tick (10 ms) + T_AIR_mechanical (40 ms)
-//   For N = 2: 200 + 28 + 28 + 10 + 40 = 306 ms  (194 ms margin < 500 ms)
-//   For N = 3: 200 + 28 + 56 + 10 + 40 = 334 ms  (166 ms margin < 500 ms)
+//   For N = 2, delay = 10 ms: 200 + 28 + (28 + 10) + 10 + 40 = 316 ms  (184 ms margin < 500 ms)
+//   For N = 3, delay = 10 ms: 200 + 28 + 2 * (28 + 10) + 10 + 40 = 354 ms  (146 ms margin < 500 ms)
 inline constexpr std::uint8_t  OpenWireConfirmSamples = 2;
-inline constexpr std::uint32_t OpenWireFastRecheckMs  = 0;   // 0 = immediate back-to-back re-poll
+inline constexpr std::uint32_t OpenWireFastRecheckMs  = 10;  // 10 ms pacing between fast re-check passes
 
 // Optional hardware profiling toggle. When 1, toggles debug GPIO via atomic BSRR writes
 // during ADOW ADC conversion, isoSPI register reads, and MCU evaluation.

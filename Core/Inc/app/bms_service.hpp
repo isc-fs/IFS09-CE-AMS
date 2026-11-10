@@ -68,10 +68,10 @@ struct BmsState {
     // cell_open_suspect_mask holds the raw offending module mask, and a fast re-check
     // is scheduled immediately. Only upon reaching config::OpenWireConfirmSamples
     // consecutive cycles does status become Fault and cell_open_mask assert.
-    open_wire::Status open_wire_status;
-    std::uint8_t      open_wire_consecutive_fails;
-    std::uint8_t      cell_open_suspect_mask;
-    std::uint32_t     cell_open_suspect_cells[config::BmsModuleCount];
+    open_wire::Status open_wire_status{open_wire::Status::Clear};
+    std::uint8_t      open_wire_consecutive_fails{0u};
+    std::uint8_t      cell_open_suspect_mask{0u};
+    std::uint32_t     cell_open_suspect_cells[config::BmsModuleCount]{};
 
     // Which INDIVIDUAL cells straddle a confirmed open tap: bit c of
     // cell_open_cells[m] set <=> cell c of module m borders a conductor that

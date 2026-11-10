@@ -77,6 +77,7 @@ BmsService::BmsService() {
     }
 
     state_.first_full_poll_done = false;
+    reset_open_wire_state();
     publish_();
 }
 
@@ -537,6 +538,7 @@ bool BmsService::update_open_wire(const std::uint8_t* pu_reply,
     }
 
     if (in_poll_raw_mask_ == 0u) {
+        open_wire_consecutive_fails_  = 0u;
         state_.open_wire_status       = open_wire::Status::Clear;
         state_.cell_open_mask         = 0u;
         state_.cell_open_suspect_mask = 0u;
