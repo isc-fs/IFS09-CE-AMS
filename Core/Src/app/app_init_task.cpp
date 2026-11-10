@@ -166,29 +166,17 @@ void ams_app_init_task_run(void *argument)
     auto& ltc_bus = ams::ltc6820::Bus::default_instance();
     ltc_bus.configure(&hspi1,
                       ams::ltc6820::CsPin{ LTC6820_CS_GPIO_Port, LTC6820_CS_Pin });
+    ltc_bus.wakeup();
 
-    std::uint8_t discovered = 0u;
-    constexpr std::uint32_t MaxDiscoveryAttempts = 3u;
-    for (std::uint32_t attempt = 0; attempt < MaxDiscoveryAttempts; ++attempt) {
-        ltc_bus.wakeup();
-        if (attempt > 0) {
-            osDelay(10);
-        }
+    const auto cmd_rdcfga = ams::ltc6811::pack_command(ams::ltc6811::CmdRDCFGA);
+    std::uint8_t reply[8 * ams::config::LtcChainLength] = {};
+    const bool   read_ok  = ltc_bus.read_register_group(cmd_rdcfga.data(),
+                                                       reply, sizeof(reply));
 
-        const auto cmd_rdcfga = ams::ltc6811::pack_command(ams::ltc6811::CmdRDCFGA);
-        std::uint8_t reply[8 * ams::config::LtcChainLength] = {};
-        const bool   read_ok  = ltc_bus.read_register_group(cmd_rdcfga.data(),
-                                                           reply, sizeof(reply));
-
-        discovered = read_ok
-            ? ams::ltc6811::count_pec_valid_segments(reply, sizeof(reply),
-                                                     ams::config::LtcChainLength)
-            : 0u;
-
-        if (discovered == ams::config::LtcChainLength) {
-            break;
-        }
-    }
+    const std::uint8_t discovered = read_ok
+        ? ams::ltc6811::count_pec_valid_segments(reply, sizeof(reply),
+                                                 ams::config::LtcChainLength)
+        : 0u;
 
     if (discovered != ams::config::LtcChainLength) {
         // Sticky-latch the fault in backup RAM (survives the watchdog

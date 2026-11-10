@@ -139,7 +139,7 @@ message(STATUS "AMS build timestamp: ${AMS_BUILD_TIMESTAMP}")
 # proper CMake options.  Defaults are OFF -- flight is the safe-by-
 # default build; bench users opt in via -DAMS_HIL_CLEAR_ERROR_LATCH=ON.
 # ---------------------------------------------------------------------------
-option(AMS_HIL_CLEAR_ERROR_LATCH  "HIL: wipe RTC->BKP_DR1 ErrorLatch on every boot" ON)
+option(AMS_HIL_CLEAR_ERROR_LATCH  "HIL: wipe RTC->BKP_DR1 ErrorLatch on every boot" OFF)
 message(STATUS "AMS_HIL_CLEAR_ERROR_LATCH = ${AMS_HIL_CLEAR_ERROR_LATCH}")
 
 # Add project symbols (macros)
