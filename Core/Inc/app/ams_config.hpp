@@ -67,7 +67,7 @@ inline constexpr std::uint32_t OpenWireFastRecheckMs  = 10;  // 10 ms pacing bet
 // Optional hardware profiling toggle. When 1, toggles debug GPIO via atomic BSRR writes
 // during ADOW ADC conversion, isoSPI register reads, and MCU evaluation.
 #ifndef ENABLE_ADOW_PROFILING
-#define ENABLE_ADOW_PROFILING 0
+#define ENABLE_ADOW_PROFILING 1
 #endif
 // BENCH DIAGNOSTIC: dump the raw ADOW pull-up / pull-down per-cell readings over
 // pit-diag, to debug the ADOW encoding and conversion timing on a real chain
