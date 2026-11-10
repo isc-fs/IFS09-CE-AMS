@@ -259,6 +259,10 @@ int main(void)
    * LTC6820/LTC6811 emulator (IFS08_HIL feat/pico-ltc-emulator), so
    * the safety predicate sees identical inputs in flight and on the
    * bench. */
+#if defined(AMS_HIL_CLEAR_ERROR_LATCH)
+  HAL_PWR_EnableBkUpAccess();
+  RTC->BKP0R = 0;
+#endif
   /* USER CODE END 2 */
 
   /* Init scheduler */
