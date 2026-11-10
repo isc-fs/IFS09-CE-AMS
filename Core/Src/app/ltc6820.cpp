@@ -46,7 +46,7 @@ static_assert(WakePulseUs + WakeGapUs > 400u && WakePulseUs + WakeGapUs < 4300u,
 // 1. LTC6820 isoSPI transceiver pulse generator and transformer settling (t_CSH >= 2 us).
 // 2. Pi Pico LTC emulator on HIL bench reliably captures the CS rising edge, drains FIFOs,
 //    and re-arms its TX FIFO before the next CS falling edge (~15 us worst-case on RP2040).
-constexpr std::uint32_t CsRecoveryUs = 50;
+constexpr std::uint32_t CsRecoveryUs = 25;
 
 // Start the Cortex-M7 DWT cycle counter if it is not running, and report
 // whether it is actually counting. On Cortex-M7 the DWT registers are behind a
