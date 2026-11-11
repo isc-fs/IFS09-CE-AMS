@@ -77,6 +77,7 @@ BmsService::BmsService() {
     }
 
     state_.first_full_poll_done = false;
+    reset_open_wire_state();
     publish_();
 }
 
@@ -412,6 +413,21 @@ bool BmsService::update_temperature(std::uint8_t        channel_idx,
     return any_ok;
 }
 
+void BmsService::reset_open_wire_state() noexcept {
+    const PublishOnExit publish_on_exit{*this};
+    open_wire_consecutive_fails_ = 0u;
+    in_poll_raw_mask_            = 0u;
+    poll_counted_fail_           = false;
+    for (auto& v : in_poll_raw_cells_) v = 0u;
+
+    state_.open_wire_status            = open_wire::Status::Clear;
+    state_.open_wire_consecutive_fails = 0u;
+    state_.cell_open_mask              = 0u;
+    state_.cell_open_suspect_mask      = 0u;
+    for (auto& v : state_.cell_open_cells) v = 0u;
+    for (auto& v : state_.cell_open_suspect_cells) v = 0u;
+}
+
 bool BmsService::update_open_wire(const std::uint8_t* pu_reply,
                                  const std::uint8_t* pd_reply,
                                  std::size_t         len, bool accumulate) noexcept {
@@ -419,8 +435,12 @@ bool BmsService::update_open_wire(const std::uint8_t* pu_reply,
     // Gated off -> report "no open" so a stale mask cannot linger, and report
     // fully evaluated so the caller does not retry.
     if (!config::CellOpenWireCheck) {
-        state_.cell_open_mask = 0u;
+        state_.open_wire_status            = open_wire::Status::Clear;
+        state_.open_wire_consecutive_fails = 0u;
+        state_.cell_open_mask              = 0u;
+        state_.cell_open_suspect_mask      = 0u;
         for (auto& v : state_.cell_open_cells) v = 0u;
+        for (auto& v : state_.cell_open_suspect_cells) v = 0u;
         return true;
     }
 
@@ -485,16 +505,70 @@ bool BmsService::update_open_wire(const std::uint8_t* pu_reply,
             }
         }
     }
-    // First attempt overwrites (clears last poll's stale bits); a retry ORs so it
-    // can't erase an open a prior attempt of THIS poll already confirmed.
-    state_.cell_open_mask = accumulate
-        ? static_cast<std::uint8_t>(state_.cell_open_mask | new_mask)
-        : new_mask;
-    for (std::uint8_t m = 0; m < config::BmsModuleCount; ++m) {
-        state_.cell_open_cells[m] = accumulate
-            ? (state_.cell_open_cells[m] | new_cells[m])
-            : new_cells[m];
+    // Debounce & Fast Re-check logic:
+    // Non-accumulate (attempt 0): new poll cycle. Update in-poll raw mask and failure streak.
+    // Accumulate (attempt > 0): in-poll retry due to PEC blip. Merge newly detected opens.
+    if (!accumulate) {
+        in_poll_raw_mask_ = new_mask;
+        for (std::uint8_t m = 0; m < config::BmsModuleCount; ++m) {
+            in_poll_raw_cells_[m] = new_cells[m];
+        }
+        if (new_mask != 0u) {
+            if (open_wire_consecutive_fails_ < 0xFFu) {
+                ++open_wire_consecutive_fails_;
+            }
+            poll_counted_fail_ = true;
+        } else {
+            if (all_ok) {
+                open_wire_consecutive_fails_ = 0u;
+            }
+            poll_counted_fail_ = false;
+        }
+    } else {
+        in_poll_raw_mask_ = static_cast<std::uint8_t>(in_poll_raw_mask_ | new_mask);
+        for (std::uint8_t m = 0; m < config::BmsModuleCount; ++m) {
+            in_poll_raw_cells_[m] |= new_cells[m];
+        }
+        if (in_poll_raw_mask_ != 0u && !poll_counted_fail_) {
+            if (open_wire_consecutive_fails_ < 0xFFu) {
+                ++open_wire_consecutive_fails_;
+            }
+            poll_counted_fail_ = true;
+        }
     }
+
+    if (in_poll_raw_mask_ == 0u) {
+        open_wire_consecutive_fails_  = 0u;
+        state_.open_wire_status       = open_wire::Status::Clear;
+        state_.cell_open_mask         = 0u;
+        state_.cell_open_suspect_mask = 0u;
+        for (std::uint8_t m = 0; m < config::BmsModuleCount; ++m) {
+            state_.cell_open_cells[m]         = 0u;
+            state_.cell_open_suspect_cells[m] = 0u;
+        }
+    } else {
+        // Suspect mask records the raw open pins/modules immediately
+        state_.cell_open_suspect_mask = in_poll_raw_mask_;
+        for (std::uint8_t m = 0; m < config::BmsModuleCount; ++m) {
+            state_.cell_open_suspect_cells[m] = in_poll_raw_cells_[m];
+        }
+
+        // Latch confirmed fault only after OpenWireConfirmSamples consecutive failures
+        if (open_wire_consecutive_fails_ >= config::OpenWireConfirmSamples) {
+            state_.open_wire_status = open_wire::Status::Fault;
+            state_.cell_open_mask   = in_poll_raw_mask_;
+            for (std::uint8_t m = 0; m < config::BmsModuleCount; ++m) {
+                state_.cell_open_cells[m] = in_poll_raw_cells_[m];
+            }
+        } else {
+            state_.open_wire_status = open_wire::Status::Suspect;
+            state_.cell_open_mask   = 0u;   // suppress SDC trip while confirming
+            for (std::uint8_t m = 0; m < config::BmsModuleCount; ++m) {
+                state_.cell_open_cells[m] = 0u;
+            }
+        }
+    }
+    state_.open_wire_consecutive_fails = open_wire_consecutive_fails_;
     return all_ok;
 }
 

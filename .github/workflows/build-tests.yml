@@ -53,6 +53,21 @@ jobs:
             echo '```'
           } >> $GITHUB_STEP_SUMMARY
 
+      - name: Convert .elf to .bin and .hex
+        run: |
+          arm-none-eabi-objcopy -O binary build/AMS.elf build/AMS.bin
+          arm-none-eabi-objcopy -O ihex   build/AMS.elf build/AMS.hex
+          ls -la build/AMS.*
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ams-firmware-build
+          path: |
+            build/AMS.elf
+            build/AMS.bin
+            build/AMS.hex
+
   unit-tests:
     name: Host unit tests (Unity)
     runs-on: ubuntu-latest

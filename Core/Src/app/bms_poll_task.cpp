@@ -20,6 +20,7 @@
 #include "app/sd_logger_task.h"
 #include "balance_controller.hpp"
 #include "bin_log.hpp"
+#include "bms_profiling.hpp"
 #include "bms_service.hpp"
 #include "current_service.hpp"
 #include "fw_health.hpp"
@@ -444,15 +445,20 @@ bool adow_pass(ams::ltc6820::Bus& bus, bool pull_up, std::uint8_t* reply) noexce
                               pull_up, /*discharge_permit=*/false,
                               ltc6811::CellSel::All));
         if (!bus.send_command(adow.data())) { ++g_ltc_spi_err_count; return false; }
+        ADOW_PROF_ADC_START();
         osDelay(config::AdcvSettleMs);
+        ADOW_PROF_ADC_STOP();
     }
 
+    ADOW_PROF_ISOSPI_START();
     // RDCV warm-up: no-op RDCFGA burns the stale-MOSI sample so the
     // back-to-back RDCV* reads keep bit-sync.
     const auto rdcfga = ltc6811::pack_command(ltc6811::CmdRDCFGA);
     std::uint8_t warmup[8 * config::LtcChainLength];
     if (!bus.read_register_group(rdcfga.data(), warmup, sizeof warmup)) {
-        ++g_ltc_spi_err_count; return false;
+        ++g_ltc_spi_err_count;
+        ADOW_PROF_ISOSPI_STOP();
+        return false;
     }
 
     static constexpr std::uint16_t RdcvCmds[4] = {
@@ -461,9 +467,12 @@ bool adow_pass(ams::ltc6820::Bus& bus, bool pull_up, std::uint8_t* reply) noexce
     for (std::uint8_t g = 0; g < 4; ++g) {
         const auto cmd = ltc6811::pack_command(RdcvCmds[g]);
         if (!bus.read_register_group(cmd.data(), reply + g * GroupBytes, GroupBytes)) {
-            ++g_ltc_spi_err_count; return false;
+            ++g_ltc_spi_err_count;
+            ADOW_PROF_ISOSPI_STOP();
+            return false;
         }
     }
+    ADOW_PROF_ISOSPI_STOP();
     return true;
 }
 
@@ -487,14 +496,38 @@ void attempt_open_wire_poll() noexcept {
     for (std::uint8_t attempt = 0; attempt <= config::OpenWireRetries; ++attempt) {
         if (!adow_pass(bus, /*pull_up=*/true,  pu)) continue;   // bus error -> retry
         if (!adow_pass(bus, /*pull_up=*/false, pd)) continue;
-        // Attempt 0 overwrites, clearing the prior poll; retries OR-accumulate so
-        // a later glitch cannot erase an open an earlier attempt confirmed.
-        if (BmsService::instance().update_open_wire(pu, pd, sizeof pu,
-                                                    /*accumulate=*/attempt != 0u)) {
-            return;   // every IC judged this attempt -> done
+        
+        ADOW_PROF_MCU_START();
+        const bool all_ok = BmsService::instance().update_open_wire(
+            pu, pd, sizeof pu, /*accumulate=*/attempt != 0u);
+        ADOW_PROF_MCU_STOP();
+
+        if (all_ok) {
+            break;   // every IC judged this attempt -> done
         }
         // else: an IC PEC-glitched -> retry gives it another clean read
     }
+
+    // Fast Re-check scheduling:
+    // If the check flagged an open wire in the Suspect state, trigger an immediate
+    // fast re-check cycle instead of waiting for the regular 200 ms poll timer.
+    if (BmsService::instance().open_wire_status() == open_wire::Status::Suspect) {
+        osEventFlagsSet(bms_eventsHandle, ams::events::bms::PollAdowFastDue);
+    }
+}
+
+// Immediate fast re-check pass executed when open-wire status is Suspect.
+void run_open_wire_fast_recheck() noexcept {
+    using namespace ams;
+    if (!config::CellOpenWireCheck) return;
+
+    if (config::OpenWireFastRecheckMs > 0u) {
+        osDelay(config::OpenWireFastRecheckMs);
+    }
+
+    const bool quiesced = quiesce_balancing();
+    attempt_open_wire_poll();
+    if (quiesced) restore_balancing();
 }
 
 // BENCH DIAGNOSTIC (config::AdowRawDiag): run one two-pass ADOW scan and stash
@@ -854,13 +887,11 @@ void run_temperature_poll() {
 
         (void)BmsService::instance().update_temperature(ch_idx, reply, sizeof(reply));
 
-        // YIELD to a due voltage poll, then resume this sweep immediately, so no
-        // channel's cadence slips. This is what bounds the voltage poll's jitter
-        // to ~one channel (~3 ms) instead of a whole sweep, the precondition that
-        // makes BmsStaleMs (350 ms) safe from nuisance trips. Re-arm PollTDue so
-        // the task finishes this sweep right after the V-poll.
+        // YIELD to a due voltage poll or urgent fast open-wire re-check, then resume
+        // this sweep immediately, so no channel's cadence slips.
         if (s_temp_ch + 1u < config::TempsPerLtc &&
-            (osEventFlagsGet(bms_eventsHandle) & ams::events::bms::PollVDue) != 0u) {
+            (osEventFlagsGet(bms_eventsHandle) &
+             (ams::events::bms::PollVDue | ams::events::bms::PollAdowFastDue)) != 0u) {
             ++s_temp_ch;
             osEventFlagsSet(bms_eventsHandle, ams::events::bms::PollTDue);
             return;
@@ -887,12 +918,9 @@ extern "C" void ams_bms_poll_task_run(void *argument) {
         osTimerStart(s_temp_timer, ams::config::BmsPollTempMs);
     }
 
-    constexpr std::uint32_t All =
-        ams::events::bms::PollVDue | ams::events::bms::PollTDue;
-
     for (;;) {
         const std::uint32_t evt = osEventFlagsWait(
-            bms_eventsHandle, All, osFlagsWaitAny, osWaitForever);
+            bms_eventsHandle, ams::events::bms::All, osFlagsWaitAny, osWaitForever);
 
         // BmsPollTask woke to service an isoSPI poll -> housekeeping liveness.
         ams::fw_health::poke(ams::fw_health::Housekeeping);
@@ -904,6 +932,10 @@ extern "C" void ams_bms_poll_task_run(void *argument) {
             continue;
         }
 
+        // Fast open-wire re-check has highest priority to meet strict 500 ms safety deadline
+        if (evt & ams::events::bms::PollAdowFastDue) {
+            run_open_wire_fast_recheck();
+        }
         if (evt & ams::events::bms::PollVDue) {
             const std::uint32_t t0 = osKernelGetTickCount();
             run_voltage_poll();

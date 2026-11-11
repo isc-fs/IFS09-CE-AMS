@@ -97,11 +97,20 @@ target_include_directories(dbc_dump PRIVATE ${AMS_ROOT}/Core/Inc)
 target_compile_features(dbc_dump PRIVATE cxx_std_17)
 
 # Same flags as the firmware target so behavior matches.
-target_compile_options(ams_unit_tests PRIVATE
-    -Wall -Wextra -Wpedantic
-    $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>
-    $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>
-)
+if (MSVC)
+    target_compile_options(ams_unit_tests PRIVATE
+        /W3
+        $<$<COMPILE_LANGUAGE:CXX>:/GR->
+        $<$<COMPILE_LANGUAGE:CXX>:/EHs-c->
+    )
+    target_compile_definitions(ams_unit_tests PRIVATE _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(ams_unit_tests PRIVATE
+        -Wall -Wextra -Wpedantic
+        $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>
+        $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>
+    )
+endif()
 
 enable_testing()
 add_test(

@@ -7,6 +7,8 @@
 #include "ltc6811.hpp"
 #include "open_wire.hpp"
 #include "ams_config.hpp"
+#include "bms_service.hpp"
+#include "safety_predicates.hpp"
 
 #include "unity.h"
 
@@ -140,4 +142,102 @@ extern "C" void test_open_wire_input_guards(void) {
     TEST_ASSERT_EQUAL_UINT16(0u, ams::open_wire::detect_open_conductors(pu, nullptr, 10, DELTA));
     TEST_ASSERT_EQUAL_UINT16(0u, ams::open_wire::detect_open_conductors(pu, pd, 0, DELTA));
     TEST_ASSERT_EQUAL_UINT16(0u, ams::open_wire::detect_open_conductors(pu, pd, 99, DELTA));
+}
+
+// --- Fast Re-check / Debounce Unit Tests -----------------------------------
+
+// a) A single spurious open-wire detection sample must NOT trip safety (SDC remains intact).
+extern "C" void test_open_wire_spurious_single_sample_does_not_trip_safety(void) {
+    // 1. Validate DebounceTracker logic
+    ams::open_wire::DebounceTracker tracker;
+    tracker.update(0x01, ams::config::OpenWireConfirmSamples);
+    TEST_ASSERT_EQUAL(static_cast<std::uint8_t>(ams::open_wire::Status::Suspect),
+                      static_cast<std::uint8_t>(tracker.status));
+    TEST_ASSERT_EQUAL_UINT8(1u, tracker.consecutive_fails);
+    TEST_ASSERT_EQUAL_UINT8(0x01, tracker.suspect_mask);
+    TEST_ASSERT_EQUAL_UINT8(0x00, tracker.confirmed_mask);
+
+    // 2. Validate Safety Predicate suppression while Suspect
+    ams::BmsState bms{};
+    bms.module_online_mask          = ams::config::AllModulesMask;
+    for (auto& t : bms.last_rx_tick) t = 10000;
+    bms.cell_open_mask              = 0x00;  // Suppressed while suspect
+    bms.cell_open_suspect_mask      = 0x01;
+    bms.open_wire_status            = ams::open_wire::Status::Suspect;
+    bms.open_wire_consecutive_fails = 1u;
+
+    ams::CurrentState cur{};
+    ams::VehicleState veh{};
+    ams::safety::Inputs in{bms, cur, veh, /*force_error_set=*/false,
+                           /*vcu_required=*/false, /*charger_required=*/false,
+                           /*now_tick=*/10000};
+
+    const auto fault = ams::safety::evaluate_fault_detail(in);
+    TEST_ASSERT_NOT_EQUAL(static_cast<std::uint8_t>(ams::safety::FaultReason::CellOpenWire),
+                          static_cast<std::uint8_t>(fault.reason));
+}
+
+// b) N consecutive samples with an open wire confirm the fault and trip safety (opens SDC).
+extern "C" void test_open_wire_n_consecutive_samples_trips_safety(void) {
+    ams::open_wire::DebounceTracker tracker;
+    for (std::uint8_t i = 1; i <= ams::config::OpenWireConfirmSamples; ++i) {
+        tracker.update(0x04, ams::config::OpenWireConfirmSamples);
+        if (i < ams::config::OpenWireConfirmSamples) {
+            TEST_ASSERT_EQUAL(static_cast<std::uint8_t>(ams::open_wire::Status::Suspect),
+                              static_cast<std::uint8_t>(tracker.status));
+            TEST_ASSERT_EQUAL_UINT8(0x00, tracker.confirmed_mask);
+        } else {
+            TEST_ASSERT_EQUAL(static_cast<std::uint8_t>(ams::open_wire::Status::Fault),
+                              static_cast<std::uint8_t>(tracker.status));
+            TEST_ASSERT_EQUAL_UINT8(0x04, tracker.confirmed_mask);
+        }
+    }
+
+    // Validate Safety Predicate trips when confirmed
+    ams::BmsState bms{};
+    bms.module_online_mask          = ams::config::AllModulesMask;
+    for (auto& t : bms.last_rx_tick) t = 10000;
+    bms.cell_open_mask              = 0x04;
+    bms.cell_open_suspect_mask      = 0x04;
+    bms.open_wire_status            = ams::open_wire::Status::Fault;
+    bms.open_wire_consecutive_fails = ams::config::OpenWireConfirmSamples;
+
+    ams::CurrentState cur{};
+    ams::VehicleState veh{};
+    ams::safety::Inputs in{bms, cur, veh, /*force_error_set=*/false,
+                           /*vcu_required=*/false, /*charger_required=*/false,
+                           /*now_tick=*/10000};
+
+    if (ams::config::CellOpenWireCheck) {
+        const auto fault = ams::safety::evaluate_fault_detail(in);
+        TEST_ASSERT_EQUAL(static_cast<std::uint8_t>(ams::safety::FaultReason::CellOpenWire),
+                          static_cast<std::uint8_t>(fault.reason));
+        TEST_ASSERT_EQUAL_UINT8(0x04, fault.detail);
+    }
+}
+
+// c) A sequence Fault -> OK -> Fault resets the counter and does not accumulate streak.
+extern "C" void test_open_wire_fault_ok_fault_sequence_resets_streak(void) {
+    ams::open_wire::DebounceTracker tracker;
+
+    // Step 1: 1st fault sample -> Suspect (count = 1)
+    tracker.update(0x02, ams::config::OpenWireConfirmSamples);
+    TEST_ASSERT_EQUAL(static_cast<std::uint8_t>(ams::open_wire::Status::Suspect),
+                      static_cast<std::uint8_t>(tracker.status));
+    TEST_ASSERT_EQUAL_UINT8(1u, tracker.consecutive_fails);
+
+    // Step 2: Clean sample (OK) -> Clear (count resets to 0)
+    tracker.update(0x00, ams::config::OpenWireConfirmSamples);
+    TEST_ASSERT_EQUAL(static_cast<std::uint8_t>(ams::open_wire::Status::Clear),
+                      static_cast<std::uint8_t>(tracker.status));
+    TEST_ASSERT_EQUAL_UINT8(0u, tracker.consecutive_fails);
+    TEST_ASSERT_EQUAL_UINT8(0x00, tracker.suspect_mask);
+    TEST_ASSERT_EQUAL_UINT8(0x00, tracker.confirmed_mask);
+
+    // Step 3: Fault sample again -> Suspect (count is 1, NOT 2)
+    tracker.update(0x02, ams::config::OpenWireConfirmSamples);
+    TEST_ASSERT_EQUAL(static_cast<std::uint8_t>(ams::open_wire::Status::Suspect),
+                      static_cast<std::uint8_t>(tracker.status));
+    TEST_ASSERT_EQUAL_UINT8(1u, tracker.consecutive_fails);
+    TEST_ASSERT_EQUAL_UINT8(0x00, tracker.confirmed_mask);
 }

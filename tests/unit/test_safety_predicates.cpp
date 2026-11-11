@@ -578,6 +578,7 @@ extern "C" void test_predicates_cell_open_wire_follows_flag(void) {
     ams::VehicleState veh;
     auto in = make_nominal(bms, cur, veh, 10000);
     bms.cell_open_mask = 0x04;   // module 2 reports an open cell-sense wire
+    bms.open_wire_status = ams::open_wire::Status::Fault;
     if (ams::config::CellOpenWireCheck) {
         TEST_ASSERT_TRUE(ams::safety::evaluate_fault(in));
         TEST_ASSERT_EQUAL_UINT8(

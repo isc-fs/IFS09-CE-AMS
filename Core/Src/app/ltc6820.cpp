@@ -41,6 +41,13 @@ constexpr std::uint32_t WakeGapUs   = 500;   // CSB high until the next device's
 static_assert(WakePulseUs + WakeGapUs > 400u && WakePulseUs + WakeGapUs < 4300u,
               "wake pulse spacing must sit between tWAKE max and tIDLE min");
 
+// Minimum CS high recovery time between SPI transactions.
+// Guarantees:
+// 1. LTC6820 isoSPI transceiver pulse generator and transformer settling (t_CSH >= 2 us).
+// 2. Pi Pico LTC emulator on HIL bench reliably captures the CS rising edge, drains FIFOs,
+//    and re-arms its TX FIFO before the next CS falling edge (~15 us worst-case on RP2040).
+constexpr std::uint32_t CsRecoveryUs = 25;
+
 // Start the Cortex-M7 DWT cycle counter if it is not running, and report
 // whether it is actually counting. On Cortex-M7 the DWT registers are behind a
 // lock (LAR) that must be unlocked before CTRL can be written.
@@ -125,6 +132,7 @@ void Bus::cs_low() noexcept {
 
 void Bus::cs_high() noexcept {
     HAL_GPIO_WritePin(static_cast<GPIO_TypeDef*>(cs_.port), cs_.pin, GPIO_PIN_SET);
+    delay_us(CsRecoveryUs);
 }
 
 void Bus::wakeup() noexcept {
